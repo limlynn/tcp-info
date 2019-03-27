@@ -1,61 +1,46 @@
-// Package pbtools contains tools to convert netlink messages to protobuf message types.
-// It contains structs for raw linux route attribute messages related to tcp-info,
-// and code for copying them into protobufs defined in tcpinfo.proto.
-package pbtools
+// Package tcpinfo contains tools to convert netlink messages to golang structs.
+// It contains structs for raw linux route attribute messages related to tcp-info.
+package tcpinfo
 
 import (
 	"bytes"
+	"errors"
 	"log"
 	"syscall"
-	"time"
 	"unsafe"
 
 	"github.com/m-lab/tcp-info/inetdiag"
-	tcpinfo "github.com/m-lab/tcp-info/nl-proto"
 
 	// Hack to force loading library, which is currently used only in nested test.
 	_ "github.com/vishvananda/netlink/nl"
 )
+
+var (
+	ErrWrongSize = errors.New("Struct size is smaller")
+)
+
+// RouteAttrValue is the type of RouteAttr.Value
+type RouteAttrValue []byte
+
+func (raw RouteAttrValue) ToTCPInfo() (*LinuxTCPInfo, error) {
+	size := int(unsafe.Sizeof(LinuxTCPInfo{}))
+	if len(raw) != size {
+		return nil, ErrWrongSize
+	}
+	return (*syscall.NlMsghdr)(unsafe.Pointer(&raw[0])), nil
+
+}
 
 // ParseCong returns the congestion algorithm string
 func ParseCong(rta *syscall.NetlinkRouteAttr) string {
 	return string(rta.Value[:len(rta.Value)-1])
 }
 
-// HeaderToProto creates an InetDiagMsgProto from the InetDiagMsg message.
-func HeaderToProto(hdr *inetdiag.InetDiagMsg) *tcpinfo.InetDiagMsgProto {
-	p := tcpinfo.InetDiagMsgProto{}
-	p.Family = tcpinfo.InetDiagMsgProto_AddressFamily(hdr.IDiagFamily)
-	p.State = tcpinfo.TCPState(hdr.IDiagState)
-	p.Timer = uint32(hdr.IDiagTimer)
-	p.Retrans = uint32(hdr.IDiagRetrans)
-	p.SockId = &tcpinfo.InetSocketIDProto{}
-	src := tcpinfo.EndPoint{}
-	p.SockId.Source = &src
-	src.Port = uint32(hdr.ID.SPort())
-	src.Ip = append(src.Ip, hdr.ID.SrcIP()...)
-	dst := tcpinfo.EndPoint{}
-	p.SockId.Destination = &dst
-	dst.Port = uint32(hdr.ID.DPort())
-	dst.Ip = append(dst.Ip, hdr.ID.DstIP()...)
-	p.SockId.Interface = hdr.ID.Interface()
-	// Convert to int64, for compatibility with bigquery.
-	p.SockId.Cookie = int64(hdr.ID.Cookie())
-	p.Expires = hdr.IDiagExpires
-	p.Rqueue = hdr.IDiagRqueue
-	p.Wqueue = hdr.IDiagWqueue
-	p.Uid = hdr.IDiagUID
-	p.Inode = hdr.IDiagInode
-
-	return &p
-}
-
 // AttrToField fills the appropriate proto subfield from a route attribute.
-func AttrToField(all *tcpinfo.TCPDiagnosticsProto, rta *syscall.NetlinkRouteAttr) {
-	switch rta.Attr.Type {
+func AttrToStruct(attrType int, attr inetdiag.RouteAttrValue) {
+	switch attrType {
 	case inetdiag.INET_DIAG_INFO:
-		ldiwr := ParseLinuxTCPInfo(rta)
-		all.TcpInfo = ldiwr.ToProto()
+		ldiwr := ParseLinuxTCPInfo(attr)
 	case inetdiag.INET_DIAG_CONG:
 		all.CongestionAlgorithm = ParseCong(rta)
 	case inetdiag.INET_DIAG_SHUTDOWN:
@@ -93,22 +78,6 @@ func AttrToField(all *tcpinfo.TCPDiagnosticsProto, rta *syscall.NetlinkRouteAttr
 		log.Printf("WARNING: Not processing %+v\n", rta)
 		// TODO(gfr) - should LOG(WARNING) on missing cases.
 	}
-}
-
-// CreateProto creates a fully populated TCPDiagnosticsProto from the parsed elements of a type 20 netlink message.
-// This assumes the netlink message is type 20, and behavior is undefined if it is not.
-func CreateProto(time time.Time, header syscall.NlMsghdr, idm *inetdiag.InetDiagMsg, attrs []*inetdiag.NetlinkRouteAttr) *tcpinfo.TCPDiagnosticsProto {
-	all := tcpinfo.TCPDiagnosticsProto{}
-	all.InetDiagMsg = HeaderToProto(idm)
-	for i := range attrs {
-		if attrs[i] != nil {
-			nlr := (*syscall.NetlinkRouteAttr)(unsafe.Pointer(attrs[i]))
-			AttrToField(&all, nlr)
-		}
-	}
-
-	all.Timestamp = time.UnixNano()
-	return &all
 }
 
 // LinuxTCPInfo is the linux defined structure returned in RouteAttr DIAG_INFO messages.
@@ -184,89 +153,6 @@ type LinuxTCPInfo struct {
 	bytesRetrans uint64 /* RFC4898 tcpEStatsPerfOctetsRetrans */
 	dsackDups    uint32 /* RFC4898 tcpEStatsStackDSACKDups */
 	reordSeen    uint32 /* reordering events seen */
-}
-
-// ToProto converts a LinuxTCPInfo struct to a TCPInfoProto
-func (tcp *LinuxTCPInfo) ToProto() *tcpinfo.TCPInfoProto {
-	var p tcpinfo.TCPInfoProto
-	p.State = tcpinfo.TCPState(tcp.state)
-
-	p.CaState = uint32(tcp.caState)
-	p.Retransmits = uint32(tcp.retransmits)
-	p.Probes = uint32(tcp.probes)
-	p.Backoff = uint32(tcp.backoff)
-	opts := tcp.options
-	p.Options = uint32(opts)
-	p.TsOpt = opts&0x01 > 0
-	p.SackOpt = opts&0x02 > 0
-	p.WscaleOpt = opts&0x04 > 0
-	p.EcnOpt = opts&0x08 > 0
-	p.EcnseenOpt = opts&0x10 > 0
-	p.FastopenOpt = opts&0x20 > 0
-
-	p.RcvWscale = uint32(tcp.wscale & 0x0F)
-	p.SndWscale = uint32(tcp.wscale >> 4)
-	p.DeliveryRateAppLimited = tcp.appLimited > 0
-
-	p.Rto = tcp.rto
-	p.Ato = tcp.ato
-	p.SndMss = tcp.sndMss
-	p.RcvMss = tcp.rcvMss
-
-	p.Unacked = tcp.unacked
-	p.Sacked = tcp.sacked
-	p.Lost = tcp.lost
-	p.Retrans = tcp.retrans
-	p.Fackets = tcp.fackets
-
-	p.LastDataSent = tcp.lastDataSent
-	p.LastAckSent = tcp.lastAckSent
-	p.LastDataRecv = tcp.lastDataRecv
-	p.LastAckRecv = tcp.lastAckRecv
-
-	p.Pmtu = tcp.pmtu
-	if tcp.rcvSsThresh < 0xFFFF {
-		p.RcvSsthresh = tcp.rcvSsThresh
-	}
-	p.Rtt = tcp.rtt
-	p.Rttvar = tcp.rttvar
-	p.SndSsthresh = tcp.sndSsThresh
-	p.SndCwnd = tcp.sndCwnd
-	p.Advmss = tcp.advmss
-	p.Reordering = tcp.reordering
-
-	p.RcvRtt = tcp.rcvRtt
-	p.RcvSpace = tcp.rcvSpace
-	p.TotalRetrans = tcp.totalRetrans
-
-	p.PacingRate = tcp.pacingRate
-	p.MaxPacingRate = tcp.maxPacingRate
-	p.BytesAcked = int64(tcp.bytesAcked)
-	p.BytesReceived = int64(tcp.bytesReceived)
-
-	p.SegsOut = tcp.segsOut
-	p.SegsIn = tcp.segsIn
-
-	p.NotsentBytes = tcp.notsentBytes
-	p.MinRtt = tcp.minRtt
-	p.DataSegsIn = tcp.dataSegsIn
-	p.DataSegsOut = tcp.dataSegsOut
-
-	p.DeliveryRate = int64(tcp.deliveryRate)
-
-	p.BusyTime = tcp.busyTime
-	p.RwndLimited = tcp.rwndLimited
-	p.SndbufLimited = tcp.sndbufLimited
-
-	p.Delivered = tcp.delivered
-	p.DeliveredCe = tcp.deliveredCe
-
-	p.BytesSent = tcp.bytesSent
-	p.BytesRetrans = tcp.bytesRetrans
-	p.DsackDups = tcp.dsackDups
-	p.ReordSeen = tcp.reordSeen
-
-	return &p
 }
 
 // Useful offsets

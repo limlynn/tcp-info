@@ -1,4 +1,4 @@
-package pbtools_test
+package tcpinfo_test
 
 import (
 	"encoding/json"
@@ -9,13 +9,10 @@ import (
 	"testing"
 	"time"
 
-	proto "github.com/golang/protobuf/proto"
-
 	"github.com/go-test/deep"
+	"github.com/gogo/protobuf/proto"
 	"github.com/m-lab/go/rtx"
 	"github.com/m-lab/tcp-info/inetdiag"
-	tcpinfo "github.com/m-lab/tcp-info/nl-proto"
-	"github.com/m-lab/tcp-info/nl-proto/pbtools"
 	"github.com/m-lab/tcp-info/zstd"
 )
 
@@ -30,14 +27,6 @@ var (
 	ErrLocal               = errors.New("Connection is loopback")
 	ErrUnknownMessageType  = errors.New("Unknown netlink message type")
 )
-
-func convertToProto(msg *syscall.NetlinkMessage, t *testing.T) *tcpinfo.TCPDiagnosticsProto {
-	parsedMsg, err := inetdiag.Parse(msg, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return pbtools.CreateProto(time.Now(), msg.Header, parsedMsg.InetDiagMsg, parsedMsg.Attributes[:])
-}
 
 func TestReader(t *testing.T) {
 	source := "testdata/testdata.zst"
