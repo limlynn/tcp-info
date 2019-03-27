@@ -46,6 +46,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/m-lab/tcp-info/tcp"
+	"github.com/m-lab/tcp-info/tcpinfo"
 )
 
 // TODO: Refactor this package, or at least this file. It feels like it
@@ -267,9 +268,6 @@ type Metadata struct {
 	StartTime time.Time
 }
 
-// RouteAttrValue is the type of RouteAttr.Value
-type RouteAttrValue []byte
-
 // ParsedMessage is a container for parsed InetDiag messages and attributes.
 type ParsedMessage struct {
 	// Timestamp should be truncated to 1 millisecond for best compression.
@@ -280,8 +278,8 @@ type ParsedMessage struct {
 	// typical compressed size by 3-4 bytes/record
 	RawIDM RawInetDiagMsg `json:",omitempty"` // RawInetDiagMsg within NLMsg
 	// Saving just the .Value fields reduces Marshalling by 1.9 usec.
-	Attributes []RouteAttrValue `json:",omitempty"` // RouteAttr.Value, backed by NLMsg
-	Metadata   *Metadata        `json:",omitempty"`
+	Attributes []tcpinfo.RouteAttrValue `json:",omitempty"` // RouteAttr.Value, backed by NLMsg
+	Metadata   *Metadata                `json:",omitempty"`
 }
 
 // ChangeType indicates why a new record is worthwhile saving.
