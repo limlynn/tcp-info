@@ -89,7 +89,7 @@ func netlinkRouteAttrAndValue(b []byte) (*unix.RtAttr, []byte, int, error) {
 // Metadata contains the metadata for a particular TCP stream.
 type Metadata struct {
 	UUID      string
-	Sequence  int
+	Sequence  int64
 	StartTime time.Time
 }
 
