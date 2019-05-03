@@ -133,16 +133,22 @@ func main() {
 		case `"Schema": null`:
 			// omit
 		case `"Schema": [`:
-			fmt.Printf("%s%s\n", before, line)
+			fallthrough
+		case `[`:
+			fmt.Printf("%s%s\n", before, trim)
 			before = ""
 		case `{`:
 			fmt.Print(line)
 			before = ""
 		case `}`:
 			fmt.Println(strings.TrimSpace(line))
+		case `]`:
+			fmt.Print(line)
+			before = ""
 		default:
 			fmt.Print(before, trim)
 			before = ", "
 		}
 	}
+	fmt.Println()
 }
