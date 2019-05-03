@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -10,6 +11,7 @@ import (
 
 	"cloud.google.com/go/bigquery"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/m-lab/go/rtx"
 	"github.com/m-lab/tcp-info/snapshot"
 )
 
@@ -73,7 +75,8 @@ func handleField(f reflect.StructField, space string) reflect.StructField {
 		log.Printf("%s%s [%d]%s\n", space, f.Name, f.Type.Len(), f.Type.Elem())
 		return f
 	case reflect.Slice:
-		log.Fatal("Slice", f.Name, f.Type.Elem())
+		log.Println("Slice: ", f.Name, f.Type.Elem())
+		return f
 	default:
 		log.Fatal("Unhandled", f.Name, f.Type.Kind())
 		return f
@@ -93,8 +96,9 @@ func handleType(t reflect.Type, space string) reflect.Type {
 		result := make([]reflect.StructField, 0, t.NumField())
 		for i := 0; i < t.NumField(); i++ {
 			if t.Field(i).PkgPath != "" {
+				// MUST include unexported fields, too.
 				// log.Println("Skip", t.Field(i).Name)
-				continue
+				// continue
 			}
 			result = append(result, handleField(t.Field(i), space+"  "))
 		}
@@ -108,6 +112,23 @@ func handleType(t reflect.Type, space string) reflect.Type {
 // Iterate through all the fields, and pick up bqdesc fields
 func addDescriptions(snap reflect.Type, schema bigquery.Schema) {
 
+}
+
+func createTable(project, dataset, table string, schema bigquery.Schema) {
+	ctx := context.Background()
+	client, err := bigquery.NewClient(ctx, project)
+	rtx.Must(err, "")
+
+	ds := client.Dataset(dataset)
+
+	ds.Create(ctx, nil)
+
+	t := ds.Table(table)
+
+	err = t.Create(ctx, &bigquery.TableMetadata{Schema: schema})
+	if err != nil {
+		log.Println(err)
+	}
 }
 
 func main() {
@@ -170,5 +191,7 @@ func main() {
 
 	log.Printf("%+v\n", snap)
 	log.Printf("%+v\n", x)
-	return
+
+	createTable("mlab-testing", "gfr", "tcpinfo", schema)
+
 }
