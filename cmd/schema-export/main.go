@@ -23,39 +23,55 @@ var (
 )
 
 func handleField(f reflect.StructField, space string) reflect.StructField {
-	var fake int64
+	// TODO This doesn't actually work
+	if f.Tag == "" {
+		f.Tag = `bigquery:,nullable`
+	} else if _, ok := f.Tag.Lookup("bigquery"); !ok {
+		f.Tag = f.Tag + ` bigquery:,nullable`
+	}
+
 	switch f.Type.Kind() {
 	// These are all fine
 	case reflect.String:
+		//f.Type = reflect.TypeOf((*bigquery.NullString)(nil)).Elem()
 	case reflect.Uint8:
+		fallthrough
 	case reflect.Int16:
+		fallthrough
 	case reflect.Uint16:
+		fallthrough
 	case reflect.Int32:
+		fallthrough
 	case reflect.Uint32:
+		fallthrough
 	case reflect.Int64:
+		//f.Type = reflect.TypeOf((*bigquery.NullInt64)(nil)).Elem()
+	case reflect.Uint64:
+		// Convert uint64 to int64, since bigquery can't handle uint64
+		f.Type = reflect.TypeOf((*int64)(nil)).Elem()
+		return f
 	case reflect.Bool:
+		//f.Type = reflect.TypeOf((*bigquery.NullBool)(nil)).Elem()
 
 		// Have to handle pointer.
 	case reflect.Ptr:
 		f.Type = handleType(f.Type.Elem(), space)
 		return f
 
-	case reflect.Uint64:
-		f.Type = reflect.TypeOf(fake)
-		return f
 	case reflect.Struct:
 		f.Type = handleType(f.Type, space)
 		return f
 	case reflect.Array:
+		spew.Dump(f.Type)
+		log.Printf("%s%s [%d]%s\n", space, f.Name, f.Type.Len, f.Type.Elem())
 		if f.Type.Elem().Kind() == reflect.Uint64 {
-			f.Type = reflect.ArrayOf(f.Type.Len(), reflect.TypeOf(fake))
+			f.Type = reflect.ArrayOf(f.Type.Len(), reflect.TypeOf((*int64)(nil)).Elem())
 		}
 		return f
 	case reflect.Slice:
-		log.Println("Slice")
-		return f
+		log.Fatal("Slice", f.Name, f.Type.Elem())
 	default:
-		log.Println("Unhandled", f.Name, f.Type.Kind())
+		log.Fatal("Unhandled", f.Name, f.Type.Kind())
 		return f
 	}
 	log.Println(space, f.Name, f.Type)
@@ -63,7 +79,7 @@ func handleField(f reflect.StructField, space string) reflect.StructField {
 }
 
 // Sanitizes an input type, producing an output type.
-// We want to end up with
+// Converts all uint64 to int64.
 func handleType(t reflect.Type, space string) reflect.Type {
 	switch t.Kind() {
 	case reflect.Ptr:
@@ -88,21 +104,45 @@ func handleType(t reflect.Type, space string) reflect.Type {
 }
 
 func main() {
-	spew.Dump(snapshot.Snapshot{})
+	//	log.Println(spew.Sdump(snapshot.Snapshot{}))
 	t := handleType(reflect.TypeOf(snapshot.Snapshot{}), "")
-	spew.Dump(t)
-	return
+	v := reflect.New(t)
+	x := v.Interface()
+	//log.Println(spew.Sdump(x))
 
-	schema, err := bigquery.InferSchema(snapshot.Snapshot{})
+	schema, err := bigquery.InferSchema(x)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	jsonBytes, err := json.Marshal(schema)
+	jsonBytes, err := json.MarshalIndent(schema, "", "  ")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	result := strings.ReplaceAll(string(jsonBytes), "uint64", "int64")
-	fmt.Println(result)
+	lines := strings.Split(string(jsonBytes), "\n")
+	before := ""
+	for _, line := range lines {
+		// Remove Required from all fields.
+		trim := strings.Trim(strings.TrimSpace(line), ",") // remove leading space, trailing comma
+		switch trim {
+		case `"Repeated": false`:
+			// omit
+		case `"Required": true`:
+			// omit
+		case `"Schema": null`:
+			// omit
+		case `"Schema": [`:
+			fmt.Printf("%s%s\n", before, line)
+			before = ""
+		case `{`:
+			fmt.Print(line)
+			before = ""
+		case `}`:
+			fmt.Println(strings.TrimSpace(line))
+		default:
+			fmt.Print(before, trim)
+			before = ", "
+		}
+	}
 }
