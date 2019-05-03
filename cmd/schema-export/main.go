@@ -6,6 +6,7 @@ import (
 	"log"
 	"reflect"
 	"strings"
+	"unsafe"
 
 	"cloud.google.com/go/bigquery"
 	"github.com/davecgh/go-spew/spew"
@@ -55,18 +56,21 @@ func handleField(f reflect.StructField, space string) reflect.StructField {
 
 		// Have to handle pointer.
 	case reflect.Ptr:
-		f.Type = handleType(f.Type.Elem(), space)
+		if f.Type.Elem().Kind() == reflect.Struct {
+			log.Println(space, f.Name, f.Type.Elem().Size(), f.Type)
+		}
+		f.Type = reflect.PtrTo(handleType(f.Type.Elem(), space))
 		return f
 
 	case reflect.Struct:
+		log.Println(space, f.Name, f.Type)
 		f.Type = handleType(f.Type, space)
 		return f
 	case reflect.Array:
-		spew.Dump(f.Type)
-		log.Printf("%s%s [%d]%s\n", space, f.Name, f.Type.Len, f.Type.Elem())
 		if f.Type.Elem().Kind() == reflect.Uint64 {
 			f.Type = reflect.ArrayOf(f.Type.Len(), reflect.TypeOf((*int64)(nil)).Elem())
 		}
+		log.Printf("%s%s [%d]%s\n", space, f.Name, f.Type.Len(), f.Type.Elem())
 		return f
 	case reflect.Slice:
 		log.Fatal("Slice", f.Name, f.Type.Elem())
@@ -84,10 +88,8 @@ func handleType(t reflect.Type, space string) reflect.Type {
 	switch t.Kind() {
 	case reflect.Ptr:
 		// dereference
-		log.Println(space, "deref", t.Elem())
 		return handleType(t.Elem(), space+"  ")
 	case reflect.Struct:
-		log.Println(space, t)
 		result := make([]reflect.StructField, 0, t.NumField())
 		for i := 0; i < t.NumField(); i++ {
 			if t.Field(i).PkgPath != "" {
@@ -103,17 +105,27 @@ func handleType(t reflect.Type, space string) reflect.Type {
 	return nil
 }
 
+// Iterate through all the fields, and pick up bqdesc fields
+func addDescriptions(snap reflect.Type, schema bigquery.Schema) {
+
+}
+
 func main() {
-	//	log.Println(spew.Sdump(snapshot.Snapshot{}))
-	t := handleType(reflect.TypeOf(snapshot.Snapshot{}), "")
+	snap := snapshot.Snapshot{}
+	rt := reflect.TypeOf(snap)
+	log.Println(rt)
+	t := handleType(rt, "")
 	v := reflect.New(t)
 	x := v.Interface()
-	//log.Println(spew.Sdump(x))
 
 	schema, err := bigquery.InferSchema(x)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	addDescriptions(rt, schema)
+
+	log.Println(spew.Sdump(schema))
 
 	jsonBytes, err := json.MarshalIndent(schema, "", "  ")
 	if err != nil {
@@ -151,4 +163,12 @@ func main() {
 		}
 	}
 	fmt.Println()
+
+	// The sizes and offsets won't match, because we dropped some unexported fields.
+	log.Println(unsafe.Sizeof(snapshot.Snapshot{}))
+	log.Println(reflect.TypeOf(x).Elem().Size())
+
+	log.Printf("%+v\n", snap)
+	log.Printf("%+v\n", x)
+	return
 }
