@@ -77,8 +77,8 @@ func parsePDT(fq string) (*pdt, error) {
 }
 
 // TODO move to bqext
-func createOrUpdateTable(table pdt, schema bigquery.Schema) error {
-	ctx := context.Background()
+func createOrUpdateTable(ctx context.Context, table pdt,
+	schema bigquery.Schema, partitioning bigquery.TimePartitioning, clustering bigquery.Clustering) error {
 	client, err := bigquery.NewClient(ctx, table.project)
 	rtx.Must(err, "")
 
@@ -94,9 +94,8 @@ func createOrUpdateTable(table pdt, schema bigquery.Schema) error {
 		log.Println(err)
 
 		meta = &bigquery.TableMetadata{Schema: schema}
-		meta.TimePartitioning = &bigquery.TimePartitioning{Field: "TestTime"}
-		// TODO Clustering
-		// meta.Clustering = &bigquery.Clustering{Fields: []string{}}
+		meta.TimePartitioning = partitioning
+		meta.Clustering = clustering
 
 		err = t.Create(ctx, meta)
 		if err != nil {
@@ -145,7 +144,8 @@ func main() {
 	if *fqTable != "" {
 		table, err := parsePDT(*fqTable)
 		rtx.Must(err, "")
-		err = createOrUpdateTable(*table, rr)
+		err = createOrUpdateTable(context.Background(), *table, rr,
+			&bigquery.TimePartitioning{Field: "TestTime"}, nil)
 		if err != nil {
 			log.Println(err)
 			os.Exit(1)
