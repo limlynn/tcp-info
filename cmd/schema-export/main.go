@@ -78,7 +78,7 @@ func parsePDT(fq string) (*pdt, error) {
 
 // TODO move to bqext
 func createOrUpdateTable(ctx context.Context, table pdt,
-	schema bigquery.Schema, partitioning bigquery.TimePartitioning, clustering bigquery.Clustering) error {
+	schema bigquery.Schema, partitioning *bigquery.TimePartitioning, clustering *bigquery.Clustering) error {
 	client, err := bigquery.NewClient(ctx, table.project)
 	rtx.Must(err, "")
 
