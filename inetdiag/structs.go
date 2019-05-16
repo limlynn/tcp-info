@@ -26,6 +26,7 @@ defined in uapi/linux/inet_diag.h
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -86,35 +87,68 @@ func NewReqV2(family, protocol uint8, states uint32) *ReqV2 {
 // Types for SockID fields.
 type cookieType [8]byte
 
+func (c *cookieType) value() uint64 {
+	return binary.LittleEndian.Uint64(c[:])
+}
+
+// MarshalCSV marshals to CSV
 func (c *cookieType) MarshalCSV() (string, error) {
-	value := binary.LittleEndian.Uint64(c[:])
-	return fmt.Sprintf("%X", value), nil
+	return fmt.Sprintf("%X", c.value()), nil
+}
+
+// MarshalJSON marshals to JSON
+func (c *cookieType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(c.value())
 }
 
 type ipType [16]byte
 
+func (ipAddr *ipType) value() string {
+	return ip(*ipAddr).String()
+}
+
 // MarshalCSV marshals ipType to CSV
 func (ipAddr *ipType) MarshalCSV() (string, error) {
-	netIP := ip(*ipAddr)
-	return netIP.String(), nil
+	return ipAddr.value(), nil
+}
+
+// MarshalJSON marshals to JSON
+func (ipAddr *ipType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(ipAddr.value())
 }
 
 // Port encodes a SockID Port
 type Port [2]byte
 
+func (p *Port) value() uint16 {
+	return binary.BigEndian.Uint16(p[:])
+}
+
 // MarshalCSV marshals a Port to CSV
 func (p *Port) MarshalCSV() (string, error) {
-	value := binary.BigEndian.Uint16(p[:])
-	return fmt.Sprintf("%d", value), nil
+	return fmt.Sprintf("%d", p.value()), nil
+}
+
+// MarshalJSON marshals to JSON
+func (p *Port) MarshalJSON() ([]byte, error) {
+	return json.Marshal(p.value())
 }
 
 // Interface encodes the SockID Interface field.
 type netIF [4]byte
 
+func (nif *netIF) value() uint32 {
+	return binary.BigEndian.Uint32(nif[:])
+}
+
 // MarshalCSV marshals Interface to CSV
 func (nif *netIF) MarshalCSV() (string, error) {
-	value := binary.BigEndian.Uint32(nif[:])
-	return fmt.Sprintf("%d", value), nil
+	return fmt.Sprintf("%d", nif.value()), nil
+}
+
+// MarshalJSON marshals to JSON
+func (nif *netIF) MarshalJSON() ([]byte, error) {
+	return json.Marshal(nif.value())
 }
 
 // SockID is the binary linux representation of a socket, as in linux/inet_diag.h
