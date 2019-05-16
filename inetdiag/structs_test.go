@@ -2,6 +2,7 @@ package inetdiag
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"syscall"
 	"testing"
@@ -94,5 +95,26 @@ func TestParseInetDiagMsg(t *testing.T) {
 	raw, value = SplitInetDiagMsg(data[:1])
 	if raw != nil || value != nil {
 		t.Error("This should fail, the data is too small.")
+	}
+}
+
+func TestIDiagJson(t *testing.T) {
+	sid := SockID{
+		IDiagSPort:  Port{2, 1},
+		IDiagDPort:  Port{1, 2},
+		IDiagSrc:    ipType{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2},
+		IDiagDst:    ipType{1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		IDiagIf:     netIF{0, 0, 2, 1},
+		IDiagCookie: cookieType{0xff, 0, 0, 0, 0, 0, 0, 0},
+	}
+
+	jb, err := json.Marshal(&sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := `{"IDiagSPort":513,"IDiagDPort":258,"IDiagSrc":"100::2","IDiagDst":"1.1.1.2","IDiagIf":513,"IDiagCookie":255}`
+	if string(jb) != expected {
+		t.Error(string(jb))
 	}
 }
