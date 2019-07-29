@@ -118,6 +118,7 @@ func MakeArchivalRecord(msg *NetlinkMessage, skipLocal bool) (*ArchivalRecord, e
 type ChangeType int
 
 // Constants to describe the degree of change between two different ParsedMessages.
+// These are used internally, but should NOT be saved.
 const (
 	NoMajorChange        ChangeType = iota
 	IDiagStateChange                // The IDiagState changed
@@ -157,59 +158,76 @@ func isLocal(addr net.IP) bool {
 // in the TCPInfo struct related to packets, bytes, and segments.  In addition to the TCPState
 // and CAState fields, these are probably adequate, but we also check for new or missing attributes
 // and any attribute difference outside of the TCPInfo (INET_DIAG_INFO) attribute.
-func (pm *ArchivalRecord) Compare(previous *ArchivalRecord) (ChangeType, error) {
+//
+// Also computes additional bytes sent and received since previous.
+func (pm *ArchivalRecord) Compare(previous *ArchivalRecord) (ChangeType, int64, int64, error) {
 	if previous == nil {
-		return PreviousWasNil, nil
+		return PreviousWasNil, 0, 0, nil
 	}
 	// If the TCP state has changed, that is important!
 	prevIDM, err := previous.RawIDM.Parse()
 	if err != nil {
-		return NoMajorChange, ErrParseFailed
+		return NoMajorChange, 0, 0, ErrParseFailed
 	}
 	pmIDM, err := pm.RawIDM.Parse()
 	if err != nil {
-		return NoMajorChange, ErrParseFailed
-	}
-	if prevIDM.IDiagState != pmIDM.IDiagState {
-		return IDiagStateChange, nil
+		return NoMajorChange, 0, 0, ErrParseFailed
 	}
 
 	// TODO - should we validate that ID matches?  Otherwise, we shouldn't even be comparing the rest.
 
+	// Anything beyond here should return the send/receive.
+	var sent int64
+	var received int64
+	prevTCP := previous.GetTCPInfo()
+	thisTCP := pm.GetTCPInfo()
+	if prevTCP != nil && thisTCP != nil {
+		sent = thisTCP.BytesSent - prevTCP.BytesSent
+		received = thisTCP.BytesReceived - prevTCP.BytesReceived
+	}
+
+	if prevTCP == nil || thisTCP == nil {
+		return NoTCPInfo, 0, 0, nil
+	}
+
+	if prevIDM.IDiagState != pmIDM.IDiagState {
+		return IDiagStateChange, sent, received, nil
+	}
+
 	// We now allocate only the size
 	if len(previous.Attributes) <= inetdiag.INET_DIAG_INFO || len(pm.Attributes) <= inetdiag.INET_DIAG_INFO {
-		return NoTCPInfo, nil
+		return NoTCPInfo, 0, 0, nil
 	}
 	a := previous.Attributes[inetdiag.INET_DIAG_INFO]
 	b := pm.Attributes[inetdiag.INET_DIAG_INFO]
 	if a == nil || b == nil {
-		return NoTCPInfo, nil
+		return NoTCPInfo, 0, 0, nil
 	}
 
 	// If any of the byte/segment/package counters have changed, that is what we are most
 	// interested in.
 	// NOTE: There are more fields beyond BusyTime, but for now we are ignoring them for diffing purposes.
 	if 0 != bytes.Compare(a[pmtuOffset:busytimeOffset], b[pmtuOffset:busytimeOffset]) {
-		return StateOrCounterChange, nil
+		return StateOrCounterChange, sent, received, nil
 	}
 
 	// Check all the earlier fields, too.  Usually these won't change unless the counters above
 	// change, but this way we won't miss something subtle.
 	if 0 != bytes.Compare(a[:lastDataSentOffset], b[:lastDataSentOffset]) {
-		return StateOrCounterChange, nil
+		return StateOrCounterChange, sent, received, nil
 	}
 
 	// If any attributes have been added or removed, that is likely significant.
 	if len(previous.Attributes) < len(pm.Attributes) {
-		return NewAttribute, nil
+		return NewAttribute, sent, received, nil
 	}
 	if len(previous.Attributes) > len(pm.Attributes) {
-		return LostAttribute, nil
+		return LostAttribute, sent, received, nil
 	}
 	// Both slices are the same length, check for other differences...
 	for tp := range previous.Attributes {
 		if tp >= len(pm.Attributes) {
-			return LostAttribute, nil
+			return LostAttribute, sent, received, nil
 		}
 		switch tp {
 		case inetdiag.INET_DIAG_INFO:
@@ -219,25 +237,25 @@ func (pm *ArchivalRecord) Compare(previous *ArchivalRecord) (ChangeType, error) 
 			a := previous.Attributes[tp]
 			b := pm.Attributes[tp]
 			if a == nil && b != nil {
-				return NewAttribute, nil
+				return NewAttribute, sent, received, nil
 			}
 			if a != nil && b == nil {
-				return LostAttribute, nil
+				return LostAttribute, sent, received, nil
 			}
 			if a == nil && b == nil {
 				continue
 			}
 			if len(a) != len(b) {
-				return AttributeLength, nil
+				return AttributeLength, sent, received, nil
 			}
 			// All others we want to be identical
 			if 0 != bytes.Compare(a, b) {
-				return Other, nil
+				return Other, sent, received, nil
 			}
 		}
 	}
 
-	return NoMajorChange, nil
+	return NoMajorChange, sent, received, nil
 }
 
 /*********************************************************************************************/
@@ -329,4 +347,27 @@ func LoadAllArchivalRecords(rdr io.Reader) ([]*ArchivalRecord, error) {
 		}
 		msgs = append(msgs, pm)
 	}
+}
+
+// toLinuxTCPInfo maps the raw bytes into a LinuxTCPInfo struct.
+func toLinuxTCPInfo(raw []byte) *tcp.LinuxTCPInfo {
+	structSize := (int)(unsafe.Sizeof(tcp.LinuxTCPInfo{}))
+	if structSize > len(raw) {
+		return nil
+	}
+	data := unsafe.Pointer(&raw[0])
+	return (*tcp.LinuxTCPInfo)(data)
+}
+
+// GetTCPInfo returns the LinuxTCPInfo struct.
+// Return nil if INET_DIAG_INFO is absent, or size is less than LinuxTCPInfo struct size.
+func (pm *ArchivalRecord) GetTCPInfo() *tcp.LinuxTCPInfo {
+	if len(pm.Attributes) <= inetdiag.INET_DIAG_INFO {
+		return nil
+	}
+	raw := pm.Attributes[inetdiag.INET_DIAG_INFO]
+	if raw == nil {
+		return nil
+	}
+	return toLinuxTCPInfo(raw)
 }

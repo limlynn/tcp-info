@@ -273,7 +273,7 @@ func (svr *Saver) endConn(cookie uint64) {
 	}
 }
 
-// MessageSaverLoop runs a loop to receive batches of ArchivalRecords.  Local connections
+// MessageSaverLoop runs a loop to receive batches of ArchivalRecords.
 func (svr *Saver) MessageSaverLoop(readerChannel <-chan []*netlink.ArchivalRecord) {
 	log.Println("Starting Saver")
 	for {
@@ -289,6 +289,9 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan []*netlink.ArchivalRecor
 			}
 			svr.swapAndQueue(msgs[i])
 		}
+
+		// Note that the connections that have closed may have had traffic that
+		// we never see, and therefore can't account for in metrics.
 		residual := svr.cache.EndCycle()
 
 		// Remove all missing connections from the cache.
@@ -317,6 +320,7 @@ func (svr *Saver) swapAndQueue(pm *netlink.ArchivalRecord) {
 			log.Println("Connections", len(svr.Connections))
 		}
 	} else {
+		// Note: This means we parse every value at least twice.
 		oldIDM, err := old.RawIDM.Parse()
 		if err != nil {
 			// TODO metric
@@ -332,12 +336,13 @@ func (svr *Saver) swapAndQueue(pm *netlink.ArchivalRecord) {
 		if oldIDM.ID != pmIDM.ID {
 			log.Println("Mismatched SockIDs", oldIDM.ID, pmIDM.ID)
 		}
-		change, err := pm.Compare(old)
+		change, _, _, err := pm.Compare(old)
 		if err != nil {
 			// TODO metric
 			log.Println(err)
 			return
 		}
+		// TODO update a metric for total traffic.
 		if change > netlink.NoMajorChange {
 			svr.stats.IncDiffCount()
 			err := svr.queue(pm)
