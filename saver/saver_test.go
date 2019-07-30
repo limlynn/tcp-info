@@ -15,7 +15,9 @@ import (
 	"github.com/m-lab/tcp-info/metrics"
 	"github.com/m-lab/tcp-info/netlink"
 	"github.com/m-lab/tcp-info/saver"
+
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 )
 
 // TODO Tests:
@@ -129,12 +131,16 @@ func TestBasic(t *testing.T) {
 			if !ok {
 				break
 			}
-			t.Log(m)
+			var mm dto.Metric
+			m.Write(&mm)
+			h := mm.GetHistogram()
+
+			t.Log(h)
 		}
 	}(c)
 	t.Log("collecting")
 	metrics.SendRateHistogram.Collect(c)
-	metrics.SendRateHistogram.Observe(100000.0)
+	metrics.SendRateHistogram.Observe(30000.0)
 	close(c)
 
 	t.Fail()
