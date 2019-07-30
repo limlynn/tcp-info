@@ -25,8 +25,8 @@ var (
 // NetlinkResult is used for storing groups of raw netlink messages for test.
 type NetlinkResult struct {
 	Time time.Time
-	IPv6 []*syscall.NetlinkMessage
-	IPv4 []*syscall.NetlinkMessage
+	IPv6 []*netlink.NetlinkMessage
+	IPv4 []*.netlink.NetlinkMessage
 }
 
 func ReadRawNetlink(filename string) ([]NetlinkResult, error) {

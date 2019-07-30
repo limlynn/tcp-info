@@ -134,13 +134,3 @@ func TestRun(t *testing.T) {
 	t.Log("Waiting for goroutines to exit")
 	wg.Wait()
 }
-
-func TestRawReader(t *testing.T) {
-	r, err := collector.ReadRawNetlink("testdata/netlinkresult.jsonl")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(r) != 5 {
-		t.Fatal("Should have read 5 records")
-	}
-}
