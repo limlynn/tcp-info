@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/m-lab/tcp-info/collector"
 
@@ -37,18 +38,12 @@ func main() {
 		if err != nil {
 			log.Println(err)
 		} else {
-			b, err := json.Marshal(res6)
+			res4, err := collector.OneType(syscall.AF_INET)
 			if err != nil {
 				log.Println(err)
 			}
-			o.WriteString(string(b))
-			o.WriteString("\n")
-		}
-		res4, err := collector.OneType(syscall.AF_INET)
-		if err != nil {
-			log.Println(err)
-		} else {
-			b, err := json.Marshal(res4)
+			record := collector.NetlinkResult{Time: time.Now(), IPv6: res6, IPv4: res4}
+			b, err := json.Marshal(record)
 			if err != nil {
 				log.Println(err)
 			}
