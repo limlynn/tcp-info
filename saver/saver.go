@@ -276,6 +276,9 @@ func (svr *Saver) endConn(cookie uint64) {
 // MessageSaverLoop runs a loop to receive batches of ArchivalRecords.  Local connections
 func (svr *Saver) MessageSaverLoop(readerChannel <-chan []*netlink.ArchivalRecord) {
 	log.Println("Starting Saver")
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
 	for {
 		msgs, ok := <-readerChannel
 		if !ok {
@@ -283,20 +286,40 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan []*netlink.ArchivalRecor
 		}
 
 		for i := range msgs {
+			// In swap and queue, we want to track the total speed of all connections
+			// every second.
 			if msgs[i] == nil {
 				log.Println("Error")
 				continue
 			}
 			svr.swapAndQueue(msgs[i])
 		}
+
+		select {
+		case <-ticker.C:
+			// for i := range msgs {
+			// 	s, r := msg[i].GetStats()
+			// }
+		default:
+		}
+
+		// Note that the connections that have closed may have had traffic that
+		// we never see, and therefore can't account for in metrics.
 		residual := svr.cache.EndCycle()
 
 		// Remove all missing connections from the cache.
+		// Here we keep a metric of the total cumulative send and receive bytes.
+		var sent, received int64
 		for i := range residual {
 			// residual is the list of all keys that were not updated.
+			s, r := residual[i].GetStats()
+			sent += s
+			received += r
 			svr.endConn(i)
 			svr.stats.IncExpiredCount()
 		}
+		// TODO update sent/received metrics
+
 	}
 	svr.Close()
 }
