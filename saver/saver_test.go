@@ -60,7 +60,6 @@ func msg(t *testing.T, cookie uint64, dport uint16) *netlink.ArchivalRecord {
 		idm.ID.IDiagDPort[i] = byte(dport & 0x0FF)
 		cookie >>= 8
 	}
-	t.Logf("%+v\n", mp.RawIDM)
 	return mp
 }
 
@@ -135,6 +134,7 @@ func TestBasic(t *testing.T) {
 	}(c)
 	t.Log("collecting")
 	metrics.SendRateHistogram.Collect(c)
+	metrics.SendRateHistogram.Observe(100000.0)
 	close(c)
 
 	t.Fail()
