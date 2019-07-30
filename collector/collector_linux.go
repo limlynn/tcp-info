@@ -37,7 +37,6 @@ func ReadRawNetlink(filename string) ([]NetlinkResult, error) {
 	defer f.Close()
 
 	rdr := bufio.NewReader(f)
-	defer rdr.Close()
 
 	result := make([]NetlinkResult, 0, 100)
 
