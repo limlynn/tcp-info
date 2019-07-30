@@ -41,7 +41,7 @@ func ReadRawNetlink(filename string) ([]NetlinkResult, error) {
 	result := make([]NetlinkResult, 0, 100)
 
 	for {
-		l, err := rdr.ReadString("\n")
+		l, err := rdr.ReadString('\n')
 		if err != nil {
 			if err != io.EOF {
 				return result, err
