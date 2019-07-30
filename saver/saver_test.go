@@ -12,8 +12,10 @@ import (
 
 	"github.com/m-lab/go/rtx"
 	"github.com/m-lab/tcp-info/inetdiag"
+	"github.com/m-lab/tcp-info/metrics"
 	"github.com/m-lab/tcp-info/netlink"
 	"github.com/m-lab/tcp-info/saver"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // TODO Tests:
@@ -36,6 +38,7 @@ func dump(t *testing.T, mp *netlink.ArchivalRecord) {
 }
 
 func msg(t *testing.T, cookie uint64, dport uint16) *netlink.ArchivalRecord {
+	// TODO - this is an incomplete message and should be replaced with a full message.
 	var json1 = `{"Header":{"Len":356,"Type":20,"Flags":2,"Seq":1,"Pid":148940},"Data":"CgEAAOpWE6cmIAAAEAMEFbM+nWqBv4ehJgf4sEANDAoAAAAAAAAAgQAAAAAdWwAAAAAAAAAAAAAAAAAAAAAAAAAAAAC13zIBBQAIAAAAAAAFAAUAIAAAAAUABgAgAAAAFAABAAAAAAAAAAAAAAAAAAAAAAAoAAcAAAAAAICiBQAAAAAAALQAAAAAAAAAAAAAAAAAAAAAAAAAAAAArAACAAEAAAAAB3gBQIoDAECcAABEBQAAuAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUCEAAAAAAAAgIQAAQCEAANwFAACsywIAJW8AAIRKAAD///9/CgAAAJQFAAADAAAALMkAAIBwAAAAAAAALnUOAAAAAAD///////////ayBAAAAAAASfQPAAAAAADMEQAANRMAAAAAAABiNQAAxAsAAGMIAABX5AUAAAAAAAoABABjdWJpYwAAAA=="}`
 	nm := netlink.NetlinkMessage{}
 	err := json.Unmarshal([]byte(json1), &nm)
@@ -118,6 +121,23 @@ func TestBasic(t *testing.T) {
 	// Force close all the files.
 	close(svrChan)
 	svr.Done.Wait()
+
+	// TODO - should make this work.  It currently doesn't see anything.
+	c := make(chan prometheus.Metric, 10)
+	go func(c chan prometheus.Metric) {
+		for {
+			m, ok := <-c
+			if !ok {
+				break
+			}
+			t.Log(m)
+		}
+	}(c)
+	t.Log("collecting")
+	metrics.SendRateHistogram.Collect(c)
+
+	close(c)
+
 	// We have to use a range-based size verification because different versions of
 	// zstd have slightly different compression ratios.
 	// The min/max criteria are based on zstd 1.3.8.

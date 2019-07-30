@@ -276,8 +276,13 @@ func (svr *Saver) endConn(cookie uint64) {
 // MessageSaverLoop runs a loop to receive batches of ArchivalRecords.  Local connections
 func (svr *Saver) MessageSaverLoop(readerChannel <-chan []*netlink.ArchivalRecord) {
 	log.Println("Starting Saver")
+
+	// TODO - should use sample time to trigger report, rather than wall time.
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	var closedSent, closedReceived int64
+	var reportedSent, reportedReceived int64
+	lastReportTime := time.Time{}.UnixNano()
 
 	for {
 		msgs, ok := <-readerChannel
@@ -285,6 +290,8 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan []*netlink.ArchivalRecor
 			break
 		}
 
+		var liveSent, liveReceived int64
+		var time int64
 		for i := range msgs {
 			// In swap and queue, we want to track the total speed of all connections
 			// every second.
@@ -292,15 +299,11 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan []*netlink.ArchivalRecor
 				log.Println("Error")
 				continue
 			}
+			time = msgs[i].Timestamp.Unix()
+			s, r := msgs[i].GetStats()
+			liveSent += s
+			liveReceived += r
 			svr.swapAndQueue(msgs[i])
-		}
-
-		select {
-		case <-ticker.C:
-			// for i := range msgs {
-			// 	s, r := msg[i].GetStats()
-			// }
-		default:
 		}
 
 		// Note that the connections that have closed may have had traffic that
@@ -308,18 +311,29 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan []*netlink.ArchivalRecor
 		residual := svr.cache.EndCycle()
 
 		// Remove all missing connections from the cache.
-		// Here we keep a metric of the total cumulative send and receive bytes.
-		var sent, received int64
+		// Also keep a metric of the total cumulative send and receive bytes.
 		for i := range residual {
 			// residual is the list of all keys that were not updated.
 			s, r := residual[i].GetStats()
-			sent += s
-			received += r
+			closedSent += s
+			closedReceived += r
 			svr.endConn(i)
 			svr.stats.IncExpiredCount()
 		}
-		// TODO update sent/received metrics
 
+		// Every second, update the total throughput for the past second.
+		if time > lastReportTime {
+			totalSent := closedSent + liveSent
+			totalReceived := closedReceived + liveReceived
+
+			metrics.SendRateHistogram.Observe(8 * float64(totalSent-reportedSent))
+			metrics.ReceiveRateHistogram.Observe(8 * float64(totalReceived-reportedReceived))
+
+			reportedSent = totalSent
+			reportedReceived = totalReceived
+
+			lastReportTime = time
+		}
 	}
 	svr.Close()
 }

@@ -340,7 +340,6 @@ func (pm *ArchivalRecord) GetStats() (int64, int64) {
 	}
 	raw := pm.Attributes[inetdiag.INET_DIAG_INFO]
 	if len(raw) < int(bytesSentOffset+4) {
-		log.Println(len(raw), "<", bytesSentOffset+4)
 		return 0, 0
 	}
 	s := *(*int64)(unsafe.Pointer(&raw[bytesSentOffset]))
