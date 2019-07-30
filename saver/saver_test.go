@@ -135,9 +135,9 @@ func TestBasic(t *testing.T) {
 	}(c)
 	t.Log("collecting")
 	metrics.SendRateHistogram.Collect(c)
-
 	close(c)
 
+	t.Fail()
 	// We have to use a range-based size verification because different versions of
 	// zstd have slightly different compression ratios.
 	// The min/max criteria are based on zstd 1.3.8.
