@@ -22,7 +22,7 @@ func main() {
 	flag.Parse()
 	flagx.ArgsFromEnv(flag.CommandLine)
 
-	if strings.HasSuffix(*outfile, ".jsonl") {
+	if !strings.HasSuffix(*outfile, ".jsonl") {
 		log.Fatal("must specify -file ending in .jsonl")
 	}
 
@@ -37,28 +37,23 @@ func main() {
 		if err != nil {
 			log.Println(err)
 		} else {
-			for i := range res6 {
-				b, err := json.Marshal(res6[i])
-				if err != nil {
-					log.Println(err)
-				}
-				o.WriteString(string(b))
-				o.WriteString("\n")
+			b, err := json.Marshal(res6)
+			if err != nil {
+				log.Println(err)
 			}
-			all = appendAll(all, res6, skipLocal)
+			o.WriteString(string(b))
+			o.WriteString("\n")
 		}
 		res4, err := collector.OneType(syscall.AF_INET)
 		if err != nil {
 			log.Println(err)
 		} else {
-			for i := range res4 {
-				b, err := json.Marshal(res4[i])
-				if err != nil {
-					log.Println(err)
-				}
-				o.WriteString(string(b))
-				o.WriteString("\n")
+			b, err := json.Marshal(res4)
+			if err != nil {
+				log.Println(err)
 			}
+			o.WriteString(string(b))
+			o.WriteString("\n")
 		}
 	}
 }
