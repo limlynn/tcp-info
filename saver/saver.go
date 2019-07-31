@@ -273,8 +273,36 @@ func (svr *Saver) endConn(cookie uint64) {
 	}
 }
 
+// Returns the bytes sent and received on all non-local connections.
+func (svr *Saver) handleType(t time.Time, msgs []*netlink.NetlinkMessage) (int64, int64) {
+	var liveSent, liveReceived int64
+	for _, msg := range msgs {
+		// In swap and queue, we want to track the total speed of all connections
+		// every second.
+		if msg == nil {
+			log.Println("Nil message")
+			continue
+		}
+		ar, err := netlink.MakeArchivalRecord(msg, true)
+		if ar == nil {
+			if err != nil {
+				log.Println(err)
+			}
+			continue
+		}
+		ar.Timestamp = t
+
+		s, r := ar.GetStats()
+		liveSent += s
+		liveReceived += r
+		svr.swapAndQueue(ar)
+	}
+
+	return liveSent, liveReceived
+}
+
 // MessageSaverLoop runs a loop to receive batches of ArchivalRecords.  Local connections
-func (svr *Saver) MessageSaverLoop(readerChannel <-chan []*netlink.ArchivalRecord) {
+func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 	log.Println("Starting Saver")
 
 	// TODO - should use sample time to trigger report, rather than wall time.
@@ -290,21 +318,9 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan []*netlink.ArchivalRecor
 			break
 		}
 
-		var liveSent, liveReceived int64
-		var time int64
-		for i := range msgs {
-			// In swap and queue, we want to track the total speed of all connections
-			// every second.
-			if msgs[i] == nil {
-				log.Println("Error")
-				continue
-			}
-			time = msgs[i].Timestamp.Unix()
-			s, r := msgs[i].GetStats()
-			liveSent += s
-			liveReceived += r
-			svr.swapAndQueue(msgs[i])
-		}
+		// Handle v4 and v6 messages, and return the total bytes sent and received.
+		s4, r4 := svr.handleType(msgs.V4Time, msgs.V4Messages)
+		s6, r6 := svr.handleType(msgs.V6Time, msgs.V6Messages)
 
 		// Note that the connections that have closed may have had traffic that
 		// we never see, and therefore can't account for in metrics.
@@ -322,9 +338,9 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan []*netlink.ArchivalRecor
 		}
 
 		// Every second, update the total throughput for the past second.
-		if time > lastReportTime {
-			totalSent := closedSent + liveSent
-			totalReceived := closedReceived + liveReceived
+		if msgs.V4Time.Unix() > lastReportTime {
+			totalSent := closedSent + s4 + s6
+			totalReceived := closedReceived + r4 + r6
 
 			metrics.SendRateHistogram.Observe(8 * float64(totalSent-reportedSent))
 			metrics.ReceiveRateHistogram.Observe(8 * float64(totalReceived-reportedReceived))
@@ -332,7 +348,7 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan []*netlink.ArchivalRecor
 			reportedSent = totalSent
 			reportedReceived = totalReceived
 
-			lastReportTime = time
+			lastReportTime = msgs.V4Time.Unix()
 		}
 	}
 	svr.Close()
