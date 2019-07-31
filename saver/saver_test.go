@@ -124,24 +124,23 @@ func TestBasic(t *testing.T) {
 	svr.Done.Wait()
 
 	// TODO - should make this work.  It currently doesn't see anything.
-	c := make(chan prometheus.Metric, 10)
-	go func(c chan prometheus.Metric) {
-		for {
-			m, ok := <-c
-			if !ok {
-				break
-			}
-			var mm dto.Metric
-			m.Write(&mm)
-			h := mm.GetHistogram()
-
-			t.Log(h)
-		}
-	}(c)
+	c := make(chan prometheus.Metric, 1)
+	metrics.SendRateHistogram.Observe(30000.0)
 	t.Log("collecting")
 	metrics.SendRateHistogram.Collect(c)
-	metrics.SendRateHistogram.Observe(30000.0)
 	close(c)
+
+	for {
+		m, ok := <-c
+		if !ok {
+			break
+		}
+		var mm dto.Metric
+		m.Write(&mm)
+		h := mm.GetHistogram()
+
+		t.Log(h)
+	}
 
 	t.Fail()
 	// We have to use a range-based size verification because different versions of
