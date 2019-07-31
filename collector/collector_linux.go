@@ -4,12 +4,8 @@
 package collector
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
-	"io"
 	"log"
-	"os"
 	"syscall"
 	"time"
 
@@ -21,43 +17,6 @@ var (
 	errCount   = 0
 	localCount = 0
 )
-
-// NetlinkResult is used for storing groups of raw netlink messages for test.
-type NetlinkResult struct {
-	Time time.Time
-	IPv6 []*netlink.NetlinkMessage
-	IPv4 []*.netlink.NetlinkMessage
-}
-
-func ReadRawNetlink(filename string) ([]NetlinkResult, error) {
-	f, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	rdr := bufio.NewReader(f)
-
-	result := make([]NetlinkResult, 0, 100)
-
-	for {
-		l, err := rdr.ReadString('\n')
-		if err != nil {
-			if err != io.EOF {
-				return result, err
-			}
-			break
-		}
-		nr := NetlinkResult{}
-		err = json.Unmarshal([]byte(l), &nr)
-		if err != nil {
-			return result, err
-		}
-		result = append(result, nr)
-	}
-
-	return result, nil
-}
 
 func appendAll(all []*netlink.ArchivalRecord, msgs []*netlink.NetlinkMessage, skipLocal bool) []*netlink.ArchivalRecord {
 	// We use UTC, and truncate to millisecond to improve compression.
