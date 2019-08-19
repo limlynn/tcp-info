@@ -361,26 +361,28 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 			// We also check for increments larger than 10x the maxSwitchSpeed.
 			if totalSent > 10*maxSwitchSpeed/8+reportedSent || totalSent < reportedSent {
 				// Some bug in the accounting!!
-				log.Println("Skipping BytesSent report due to bad accounting", reportedSent, ">", totalSent, "=", closedSent, "+", s4, "+", s6)
+				log.Println("Skipping BytesSent report due to bad accounting:  ", reportedSent, ">", totalSent, "=", closedSent, "+", s4, "+", s6)
 				if totalSent < reportedSent {
 					metrics.ErrorCount.WithLabelValues("totalSent < reportedSent").Inc()
 				} else {
 					metrics.ErrorCount.WithLabelValues("totalSent-reportedSent exceeds network capacity").Inc()
 				}
 			} else {
+				log.Println("                                        BytesSent:", reportedSent, ">", totalSent, "=", closedSent, "+", s4, "+", s6)
 				metrics.SendRateHistogram.Observe(8 * float64(totalSent-reportedSent))
 				reportedSent = totalSent // the total bytes reported to prometheus.
 			}
 
 			if totalReceived > 10*maxSwitchSpeed/8+reportedReceived || totalReceived < reportedReceived {
 				// Some bug in the accounting!!
-				log.Println("Skipping BytesReceived report due to bad accounting", totalReceived, reportedReceived, closedReceived, r4, r6)
+				log.Println("Skipping BytesReceived report due to bad accounting", reportedReceived, ">", totalReceived, "=", closedReceived, "+", r4, "+", r6)
 				if totalReceived < reportedReceived {
 					metrics.ErrorCount.WithLabelValues("totalReceived < reportedReceived").Inc()
 				} else {
 					metrics.ErrorCount.WithLabelValues("totalReceived-reportedReceived exceeds network capacity").Inc()
 				}
 			} else {
+				// log.Println("                                     BytesReceived:", reportedReceived, ">", totalReceived, "=", closedReceived, "+", r4, "+", r6)
 				metrics.ReceiveRateHistogram.Observe(8 * float64(totalReceived-reportedReceived))
 				reportedReceived = totalReceived // the total bytes reported to prometheus.
 			}
