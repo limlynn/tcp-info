@@ -352,6 +352,10 @@ func (pm *ArchivalRecord) GetStats() (uint64, uint64) {
 	// The linux fields are actually uint64, though the LinuxTCPInfo struct uses int64 for bigquery compatibility.
 	s := *(*uint64)(unsafe.Pointer(&raw[bytesSentOffset]))
 	r := *(*uint64)(unsafe.Pointer(&raw[bytesReceivedOffset]))
+	// Detect negative value bug?
+	if s > 1<<48 || r > 1<<48 {
+		log.Println("Suspicious byte count values:", s, r)
+	}
 	return s, r
 }
 

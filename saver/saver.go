@@ -329,16 +329,23 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 		// we never see, and therefore can't account for in metrics.
 		residual := svr.cache.EndCycle()
 
+		// Accumulator for byte counts from closed connections.
+		var rs uint64
+		var rr uint64
+
 		// Remove all missing connections from the cache.
 		// Also keep a metric of the total cumulative send and receive bytes.
 		for cookie := range residual {
 			// residual is the list of all keys that were not updated.
 			s, r := residual[cookie].GetStats()
-			closedSent += s
-			closedReceived += r
+			rs += s
+			rr += r
 			svr.endConn(cookie)
 			svr.stats.IncExpiredCount()
 		}
+
+		closedSent += rs
+		closedReceived += rr
 
 		// Every second, update the total throughput for the past second.
 		if msgs.V4Time.Unix() > lastReportTime {
@@ -354,7 +361,7 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 			// We also check for increments larger than 10x the maxSwitchSpeed.
 			if totalSent > 10*maxSwitchSpeed/8+reportedSent || totalSent < reportedSent {
 				// Some bug in the accounting!!
-				log.Println("Skipping BytesSent report due to bad accounting", totalSent, reportedSent, closedSent, s4, s6)
+				log.Println("Skipping BytesSent report due to bad accounting", reportedSent, ">", totalSent, "=", closedSent, "+", s4, "+", s6)
 				if totalSent < reportedSent {
 					metrics.ErrorCount.WithLabelValues("totalSent < reportedSent").Inc()
 				} else {
