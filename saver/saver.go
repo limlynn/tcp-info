@@ -306,11 +306,33 @@ func (svr *Saver) handleType(t time.Time, msgs []*netlink.NetlinkMessage) (uint6
 	return liveSent, liveReceived
 }
 
+type cycleStats struct {
+	live4, live6 uint64
+	closed       uint64
+}
+
+func (cs cycleStats) total() uint64 {
+	return cs.live4 + cs.live6 + cs.closed
+}
+
+// returns true if ok, false if problem.
+func (cs cycleStats) compare(msg string, prev cycleStats) bool {
+	if cs.closed < prev.closed {
+		log.Printf("%s: %+v -> %+v\n", msg, prev, cs)
+		return false
+	}
+	if cs.total() < prev.total() {
+		log.Printf("%s: %+v -> %+v (%d > %d)\n", msg, prev, cs, prev.total(), cs.total())
+		return false
+	}
+	return true
+}
+
 // MessageSaverLoop runs a loop to receive batches of ArchivalRecords.  Local connections
 func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 	log.Println("Starting Saver")
 
-	var closedSent, closedReceived uint64
+	var lastSent, lastReceived cycleStats
 	var reportedSent, reportedReceived uint64
 	lastReportTime := time.Time{}.Unix()
 
@@ -320,10 +342,12 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 			break
 		}
 
+		var sent, received cycleStats
+
 		// Handle v4 and v6 messages, and return the total bytes sent and received.
 		// TODO - we only need to collect these stats if this is a reporting cycle.
-		s4, r4 := svr.handleType(msgs.V4Time, msgs.V4Messages)
-		s6, r6 := svr.handleType(msgs.V6Time, msgs.V6Messages)
+		sent.live4, received.live4 = svr.handleType(msgs.V4Time, msgs.V4Messages)
+		sent.live6, received.live6 = svr.handleType(msgs.V6Time, msgs.V6Messages)
 
 		// Note that the connections that have closed may have had traffic that
 		// we never see, and therefore can't account for in metrics.
@@ -344,14 +368,14 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 			svr.stats.IncExpiredCount()
 		}
 
-		closedSent += rs
-		closedReceived += rr
+		sent.closed = rs
+		received.closed = rr
+
+		sent.compare("sent", lastSent)
+		received.compare("received", lastReceived)
 
 		// Every second, update the total throughput for the past second.
 		if msgs.V4Time.Unix() > lastReportTime {
-			// This is the total bytes since program start.
-			totalSent := closedSent + s4 + s6
-			totalReceived := closedReceived + r4 + r6
 
 			// NOTE: We are seeing occasions when total < reported.  This messes up prometheus, so
 			// we detect that and skip reporting.
@@ -359,37 +383,41 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 			// and only recover after many seconds of gradual increases (on idle workstation).
 			// This workaround seems to also cure the 2<<67 reports.
 			// We also check for increments larger than 10x the maxSwitchSpeed.
+			totalSent := sent.total()
 			if totalSent > 10*maxSwitchSpeed/8+reportedSent || totalSent < reportedSent {
 				// Some bug in the accounting!!
-				log.Println("Skipping BytesSent report due to bad accounting:  ", reportedSent, ">", totalSent, "=", closedSent, "+", s4, "+", s6)
+				log.Println("Skipping BytesSent report due to bad accounting")
 				if totalSent < reportedSent {
 					metrics.ErrorCount.WithLabelValues("totalSent < reportedSent").Inc()
 				} else {
 					metrics.ErrorCount.WithLabelValues("totalSent-reportedSent exceeds network capacity").Inc()
 				}
 			} else {
-				log.Println("                                        BytesSent:", reportedSent, ">", totalSent, "=", closedSent, "+", s4, "+", s6)
 				metrics.SendRateHistogram.Observe(8 * float64(totalSent-reportedSent))
 				reportedSent = totalSent // the total bytes reported to prometheus.
 			}
 
+			totalReceived := received.total()
 			if totalReceived > 10*maxSwitchSpeed/8+reportedReceived || totalReceived < reportedReceived {
 				// Some bug in the accounting!!
-				log.Println("Skipping BytesReceived report due to bad accounting", reportedReceived, ">", totalReceived, "=", closedReceived, "+", r4, "+", r6)
+				log.Println("Skipping BytesReceived report due to bad accounting")
 				if totalReceived < reportedReceived {
 					metrics.ErrorCount.WithLabelValues("totalReceived < reportedReceived").Inc()
 				} else {
 					metrics.ErrorCount.WithLabelValues("totalReceived-reportedReceived exceeds network capacity").Inc()
 				}
 			} else {
-				// log.Println("                                     BytesReceived:", reportedReceived, ">", totalReceived, "=", closedReceived, "+", r4, "+", r6)
 				metrics.ReceiveRateHistogram.Observe(8 * float64(totalReceived-reportedReceived))
 				reportedReceived = totalReceived // the total bytes reported to prometheus.
 			}
 
 			lastReportTime = msgs.V4Time.Unix()
 		}
+
+		lastSent = sent
+		lastReceived = received
 	}
+
 	svr.Close()
 }
 
