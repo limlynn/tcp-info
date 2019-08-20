@@ -334,6 +334,7 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 
 	var lastSent, lastReceived cycleStats
 	var reportedSent, reportedReceived uint64
+	var sentClosed, receivedClosed uint64 // Totals of ALL closed connections.
 	lastReportTime := time.Time{}.Unix()
 
 	for {
@@ -368,8 +369,11 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 			svr.stats.IncExpiredCount()
 		}
 
-		sent.closed = rs
-		received.closed = rr
+		sentClosed += rs
+		receivedClosed += rr
+
+		sent.closed = sentClosed
+		received.closed = receivedClosed
 
 		sent.compare("sent", lastSent)
 		received.compare("received", lastReceived)
