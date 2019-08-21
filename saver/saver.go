@@ -238,17 +238,11 @@ func (svr *Saver) queue(msg *netlink.ArchivalRecord) error {
 	q := svr.MarshalChans[int(cookie%uint64(len(svr.MarshalChans)))]
 	conn, ok := svr.Connections[cookie]
 	if !ok {
-		// Likely first time we have seen this connection.  Create a new Connection, unless
-		// the connection is already closing.
+		// Create a new connection for first time cookies.  For late connections already
+		// terminating, log some info for debugging purposes.
 		if idm.IDiagState >= uint8(tcp.FIN_WAIT1) {
 			s, r := msg.GetStats()
-			// TODO remove this - we are no longer skipping these because of accounting.
-			log.Println("Skipping:", cookie, tcp.State(idm.IDiagState), s, r, msg.Timestamp)
-		}
-		if false && (svr.cache.CycleCount() > 0 || idm.IDiagState != uint8(tcp.ESTABLISHED)) {
-			s, r := msg.GetStats()
-			// log.Println("New conn:", cookie, s, r, idm.ID.GetSockID(), msg.Timestamp)
-			log.Println("Starting:", cookie, tcp.State(idm.IDiagState), s, r)
+			log.Println("Starting:", cookie, tcp.State(idm.IDiagState), s, r, msg.Timestamp)
 		}
 		conn = newConnection(idm, msg.Timestamp)
 		svr.Connections[cookie] = conn
@@ -480,16 +474,10 @@ func (svr *Saver) swapAndQueue(pm *netlink.ArchivalRecord) (sLost uint64, rLost 
 			if change == netlink.IDiagStateChange {
 				sOld, rOld := old.GetStats()
 				sPM, rPM := pm.GetStats()
-				// log.Println("State change", oldIDM.ID.Cookie(),
-				// 	tcp.State(oldIDM.IDiagState), "->", tcp.State(pmIDM.IDiagState),
-				// 	sOld, "->", sPM, rOld, "->", rPM)
-				if pmIDM.IDiagState == uint8(tcp.FIN_WAIT2) {
-					log.Println("Closing:", oldIDM.ID.Cookie(), tcp.State(oldIDM.IDiagState), sOld, rOld)
+				if sOld > sPM || rOld > rPM {
+					log.Println("Closing:", oldIDM.ID.Cookie(), tcp.State(oldIDM.IDiagState), sOld, rOld, old.Timestamp)
 					sLost += sOld - sPM
 					rLost += rOld - rPM
-				} else if sOld > sPM || rOld > rPM {
-					log.Println("BUG - decreasing byte counts",
-						sOld, "->", sPM, rOld, "->", rPM)
 				}
 			}
 			svr.stats.IncDiffCount()
