@@ -363,11 +363,17 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 		// Remove all missing connections from the cache.
 		// Also keep a metric of the total cumulative send and receive bytes.
 		for cookie := range residual {
-			// residual is the list of all keys that were not updated.
-			s, r := residual[cookie].GetStats()
+			ar := residual[cookie]
+			s, r := ar.GetStats()
 			rs += s
 			rr += r
-			log.Println("Closing:", cookie, s, r)
+			IDM, err := ar.RawIDM.Parse()
+			if err != nil {
+				log.Println("Closing:", cookie, s, r, "IDM parse error")
+			} else {
+				log.Println("Closing:", cookie, tcp.State(IDM.IDiagState), s, r)
+			}
+
 			svr.endConn(cookie)
 			svr.stats.IncExpiredCount()
 		}
