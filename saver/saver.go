@@ -370,9 +370,9 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 			rr += r
 			IDM, err := ar.RawIDM.Parse()
 			if err != nil {
-				log.Println("Closing:", cookie, s, r, "IDM parse error")
+				log.Println("Closed: ", cookie, s, r, "IDM parse error")
 			} else {
-				log.Println("Closing:", cookie, tcp.State(IDM.IDiagState), s, r)
+				log.Println("Closed: ", cookie, tcp.State(IDM.IDiagState), s, r)
 			}
 
 			svr.endConn(cookie)
@@ -476,13 +476,14 @@ func (svr *Saver) swapAndQueue(pm *netlink.ArchivalRecord) (sLost uint64, rLost 
 			return
 		}
 		if change > netlink.NoMajorChange {
-			if false && change == netlink.IDiagStateChange {
+			if change == netlink.IDiagStateChange {
 				sOld, rOld := old.GetStats()
 				sPM, rPM := pm.GetStats()
-				log.Println("State change", oldIDM.ID.Cookie(),
-					tcp.State(oldIDM.IDiagState), "->", tcp.State(pmIDM.IDiagState),
-					sOld, "->", sPM, rOld, "->", rPM)
+				// log.Println("State change", oldIDM.ID.Cookie(),
+				// 	tcp.State(oldIDM.IDiagState), "->", tcp.State(pmIDM.IDiagState),
+				// 	sOld, "->", sPM, rOld, "->", rPM)
 				if pmIDM.IDiagState == uint8(tcp.FIN_WAIT2) {
+					log.Println("Closing:", oldIDM.ID.Cookie(), tcp.State(oldIDM.IDiagState), sOld, rOld)
 					sLost += sOld - sPM
 					rLost += rOld - rPM
 				} else if sOld > sPM || rOld > rPM {
