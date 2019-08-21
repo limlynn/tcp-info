@@ -363,11 +363,14 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 			s, r := ar.GetStats()
 			rs += s
 			rr += r
-			IDM, err := ar.RawIDM.Parse()
-			if err != nil {
-				log.Println("Closed: ", cookie, s, r, "IDM parse error")
-			} else {
-				log.Println("Closed: ", cookie, tcp.State(IDM.IDiagState), s, r)
+			if svr.cache.CycleCount() < 1<<20 {
+				// TODO - remove when we are confident bugs are fixed.
+				IDM, err := ar.RawIDM.Parse()
+				if err != nil {
+					log.Println("Closed: ", cookie, s, r, "IDM parse error")
+				} else {
+					log.Println("Closed: ", cookie, tcp.State(IDM.IDiagState), s, r)
+				}
 			}
 
 			svr.endConn(cookie)
