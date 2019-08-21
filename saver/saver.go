@@ -244,7 +244,8 @@ func (svr *Saver) queue(msg *netlink.ArchivalRecord) error {
 			log.Println("Skipping", tcp.State(idm.IDiagState).String(), idm, msg.Timestamp)
 			return nil
 		}
-		if svr.cache.CycleCount() > 0 || idm.IDiagState != uint8(tcp.ESTABLISHED) {
+		// TODO - remove this code when confident bug is fixed.
+		if false && (svr.cache.CycleCount() > 0 || idm.IDiagState != uint8(tcp.ESTABLISHED)) {
 			s, r := msg.GetStats()
 			log.Println("New conn:", cookie, s, r, idm.ID.GetSockID(), msg.Timestamp)
 		}
@@ -396,6 +397,7 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 			// and only recover after many seconds of gradual increases (on idle workstation).
 			// This workaround seems to also cure the 2<<67 reports.
 			// We also check for increments larger than 10x the maxSwitchSpeed.
+			// TODO remove all this code once we are convinced the bug is fixed.
 			totalSent := sent.total()
 			if totalSent > 10*maxSwitchSpeed/8+reportedSent || totalSent < reportedSent {
 				// Some bug in the accounting!!
@@ -474,7 +476,7 @@ func (svr *Saver) swapAndQueue(pm *netlink.ArchivalRecord) (sLost uint64, rLost 
 			return
 		}
 		if change > netlink.NoMajorChange {
-			if change == netlink.IDiagStateChange {
+			if false && change == netlink.IDiagStateChange {
 				sOld, rOld := old.GetStats()
 				sPM, rPM := pm.GetStats()
 				log.Println("State change", oldIDM.ID.Cookie(),
