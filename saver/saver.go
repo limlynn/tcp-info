@@ -465,6 +465,13 @@ func (svr *Saver) swapAndQueue(pm *netlink.ArchivalRecord) {
 			return
 		}
 		if change > netlink.NoMajorChange {
+			if change == netlink.IDiagStateChange {
+				sOld, rOld := old.GetStats()
+				sPM, rPM := pm.GetStats()
+				log.Println("State change", oldIDM.ID.Cookie(),
+					tcp.State(oldIDM.IDiagState), "->", tcp.State(pmIDM.IDiagState),
+					sOld, "->", sPM, rOld, "->", rPM)
+			}
 			svr.stats.IncDiffCount()
 			metrics.SnapshotCount.Inc()
 			err := svr.queue(pm)
