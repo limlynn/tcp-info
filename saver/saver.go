@@ -242,8 +242,8 @@ func (svr *Saver) queue(msg *netlink.ArchivalRecord) error {
 		// the connection is already closing.
 		if idm.IDiagState >= uint8(tcp.FIN_WAIT1) {
 			s, r := msg.GetStats()
+			// TODO remove this - we are no longer skipping these because of accounting.
 			log.Println("Skipping:", cookie, tcp.State(idm.IDiagState), s, r, msg.Timestamp)
-			return nil
 		}
 		if false && (svr.cache.CycleCount() > 0 || idm.IDiagState != uint8(tcp.ESTABLISHED)) {
 			s, r := msg.GetStats()
