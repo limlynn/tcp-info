@@ -242,7 +242,7 @@ func (svr *Saver) queue(msg *netlink.ArchivalRecord) error {
 		// terminating, log some info for debugging purposes.
 		if idm.IDiagState >= uint8(tcp.FIN_WAIT1) {
 			s, r := msg.GetStats()
-			log.Println("Starting:", cookie, tcp.State(idm.IDiagState), s, r, msg.Timestamp)
+			log.Println("Starting:", cookie, tcp.State(idm.IDiagState), s, r, float32(msg.Timestamp.UnixNano()/int64(time.Millisecond))/1000.0)
 		}
 		conn = newConnection(idm, msg.Timestamp)
 		svr.Connections[cookie] = conn
@@ -367,9 +367,9 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 				// TODO - remove when we are confident bugs are fixed.
 				IDM, err := ar.RawIDM.Parse()
 				if err != nil {
-					log.Println("Closed: ", cookie, s, r, "IDM parse error")
+					log.Println("Closed: ", cookie, s, r, "IDM parse error", float32(ar.Timestamp.UnixNano()/int64(time.Millisecond))/1000.0)
 				} else {
-					log.Println("Closed: ", cookie, tcp.State(IDM.IDiagState), s, r)
+					log.Println("Closed: ", cookie, tcp.State(IDM.IDiagState), s, r, float32(ar.Timestamp.UnixNano()/int64(time.Millisecond))/1000.0)
 				}
 			}
 
@@ -478,7 +478,7 @@ func (svr *Saver) swapAndQueue(pm *netlink.ArchivalRecord) (sLost uint64, rLost 
 				sOld, rOld := old.GetStats()
 				sPM, rPM := pm.GetStats()
 				if sOld > sPM || rOld > rPM {
-					log.Println("Closing:", oldIDM.ID.Cookie(), tcp.State(oldIDM.IDiagState), sOld, rOld, old.Timestamp)
+					log.Println("Closing:", oldIDM.ID.Cookie(), tcp.State(oldIDM.IDiagState), sOld, rOld, float32(old.Timestamp.UnixNano()/int64(time.Millisecond)/1000.0))
 					sLost += sOld - sPM
 					rLost += rOld - rPM
 				}
