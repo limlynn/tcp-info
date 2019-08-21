@@ -267,7 +267,6 @@ func (svr *Saver) queue(msg *netlink.ArchivalRecord) error {
 }
 
 func (svr *Saver) endConn(cookie uint64) {
-	log.Println("Closing:", cookie)
 	q := svr.MarshalChans[cookie%uint64(len(svr.MarshalChans))]
 	conn, ok := svr.Connections[cookie]
 	if ok && conn.Writer != nil {
@@ -365,6 +364,7 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 			s, r := residual[cookie].GetStats()
 			rs += s
 			rr += r
+			log.Println("Closing:", cookie, s, r)
 			svr.endConn(cookie)
 			svr.stats.IncExpiredCount()
 		}
