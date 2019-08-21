@@ -245,7 +245,7 @@ func (svr *Saver) queue(msg *netlink.ArchivalRecord) error {
 			return nil
 		}
 		if svr.cache.CycleCount() > 0 || idm.IDiagState != uint8(tcp.ESTABLISHED) {
-			log.Println("New conn:", idm, msg.Timestamp)
+			log.Println("New conn:", cookie, idm.ID.GetSockID(), msg.Timestamp)
 		}
 		conn = newConnection(idm, msg.Timestamp)
 		svr.Connections[cookie] = conn
