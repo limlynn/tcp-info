@@ -241,7 +241,8 @@ func (svr *Saver) queue(msg *netlink.ArchivalRecord) error {
 		// Likely first time we have seen this connection.  Create a new Connection, unless
 		// the connection is already closing.
 		if idm.IDiagState >= uint8(tcp.FIN_WAIT1) {
-			log.Println("Skipping", tcp.State(idm.IDiagState).String(), idm, msg.Timestamp)
+			s, r := msg.GetStats()
+			log.Println("Skipping:", cookie, tcp.State(idm.IDiagState), s, r, msg.Timestamp)
 			return nil
 		}
 		if false && (svr.cache.CycleCount() > 0 || idm.IDiagState != uint8(tcp.ESTABLISHED)) {
