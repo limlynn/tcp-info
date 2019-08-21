@@ -278,8 +278,7 @@ func (svr *Saver) endConn(cookie uint64) {
 
 // Handle a bundle of messages.
 // Returns the bytes sent and received on all non-local connections.
-func (svr *Saver) handleType(t time.Time, msgs []*netlink.NetlinkMessage) (uint64, uint64) {
-	var liveSent, liveReceived uint64
+func (svr *Saver) handleType(t time.Time, msgs []*netlink.NetlinkMessage) (liveSent, liveReceived, lostSent, lostReceived uint64) {
 	for _, msg := range msgs {
 		// In swap and queue, we want to track the total speed of all connections
 		// every second.
@@ -300,10 +299,12 @@ func (svr *Saver) handleType(t time.Time, msgs []*netlink.NetlinkMessage) (uint6
 		s, r := ar.GetStats()
 		liveSent += s
 		liveReceived += r
-		svr.swapAndQueue(ar)
+		ls, lr := svr.swapAndQueue(ar)
+		lostSent += ls
+		lostReceived += lr
 	}
 
-	return liveSent, liveReceived
+	return
 }
 
 type cycleStats struct {
@@ -344,19 +345,20 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 		}
 
 		var sent, received cycleStats
+		var ls4, lr4, ls6, lr6 uint64 // lost byte counts from FIN_WAIT2
 
 		// Handle v4 and v6 messages, and return the total bytes sent and received.
 		// TODO - we only need to collect these stats if this is a reporting cycle.
-		sent.live4, received.live4 = svr.handleType(msgs.V4Time, msgs.V4Messages)
-		sent.live6, received.live6 = svr.handleType(msgs.V6Time, msgs.V6Messages)
+		sent.live4, received.live4, ls4, lr4 = svr.handleType(msgs.V4Time, msgs.V4Messages)
+		sent.live6, received.live6, ls6, lr6 = svr.handleType(msgs.V6Time, msgs.V6Messages)
 
 		// Note that the connections that have closed may have had traffic that
 		// we never see, and therefore can't account for in metrics.
 		residual := svr.cache.EndCycle()
 
 		// Accumulator for byte counts from closed connections.
-		var rs uint64
-		var rr uint64
+		rs := ls4 + ls6 // start with any counts lost from FIN_WAIT2 states.
+		rr := lr4 + lr6
 
 		// Remove all missing connections from the cache.
 		// Also keep a metric of the total cumulative send and receive bytes.
@@ -426,7 +428,8 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 	svr.Close()
 }
 
-func (svr *Saver) swapAndQueue(pm *netlink.ArchivalRecord) {
+// Returns lost send and receive bytes from FIN_WAIT2 states.
+func (svr *Saver) swapAndQueue(pm *netlink.ArchivalRecord) (sLost uint64, rLost uint64) {
 	svr.stats.IncTotalCount() // TODO fix race
 	old, err := svr.cache.Update(pm)
 	if err != nil {
@@ -471,6 +474,13 @@ func (svr *Saver) swapAndQueue(pm *netlink.ArchivalRecord) {
 				log.Println("State change", oldIDM.ID.Cookie(),
 					tcp.State(oldIDM.IDiagState), "->", tcp.State(pmIDM.IDiagState),
 					sOld, "->", sPM, rOld, "->", rPM)
+				if pmIDM.IDiagState == uint8(tcp.FIN_WAIT2) {
+					sLost += sOld - sPM
+					rLost += rOld - rPM
+				} else if sOld > sPM || rOld > rPM {
+					log.Println("BUG - decreasing byte counts",
+						sOld, "->", sPM, rOld, "->", rPM)
+				}
 			}
 			svr.stats.IncDiffCount()
 			metrics.SnapshotCount.Inc()
@@ -481,6 +491,7 @@ func (svr *Saver) swapAndQueue(pm *netlink.ArchivalRecord) {
 			}
 		}
 	}
+	return
 }
 
 // Close shuts down all the marshallers, and waits for all files to be closed.
