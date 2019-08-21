@@ -244,10 +244,10 @@ func (svr *Saver) queue(msg *netlink.ArchivalRecord) error {
 			log.Println("Skipping", tcp.State(idm.IDiagState).String(), idm, msg.Timestamp)
 			return nil
 		}
-		// TODO - remove this code when confident bug is fixed.
-		if false && (svr.cache.CycleCount() > 0 || idm.IDiagState != uint8(tcp.ESTABLISHED)) {
+		if svr.cache.CycleCount() > 0 || idm.IDiagState != uint8(tcp.ESTABLISHED) {
 			s, r := msg.GetStats()
-			log.Println("New conn:", cookie, s, r, idm.ID.GetSockID(), msg.Timestamp)
+			// log.Println("New conn:", cookie, s, r, idm.ID.GetSockID(), msg.Timestamp)
+			log.Println("Starting:", cookie, tcp.State(idm.IDiagState), s, r)
 		}
 		conn = newConnection(idm, msg.Timestamp)
 		svr.Connections[cookie] = conn
