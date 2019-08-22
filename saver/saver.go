@@ -439,7 +439,7 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 }
 
 // Returns lost send and receive bytes from FIN_WAIT2 states.
-func (svr *Saver) swapAndQueue(pm *netlink.ArchivalRecord) (sLost uint64, rLost uint64) {
+func (svr *Saver) swapAndQueue(pm *netlink.ArchivalRecord) (lostSent uint64, lostReceived uint64) {
 	svr.stats.IncTotalCount() // TODO fix race
 	old, err := svr.cache.Update(pm)
 	if err != nil {
@@ -479,12 +479,13 @@ func (svr *Saver) swapAndQueue(pm *netlink.ArchivalRecord) (sLost uint64, rLost 
 		}
 		if change > netlink.NoMajorChange {
 			if change == netlink.IDiagStateChange {
-				sOld, rOld := old.GetStats()
-				sPM, rPM := pm.GetStats()
-				if sOld > sPM || rOld > rPM {
-					log.Println("Closing:", oldIDM.ID.Cookie(), tcp.State(oldIDM.IDiagState), sOld, rOld, float32(old.Timestamp.UnixNano()/int64(time.Millisecond)/1000.0))
-					sLost += sOld - sPM
-					rLost += rOld - rPM
+				oldSent, oldReceived := old.GetStats()
+				pmSent, pmReceived := pm.GetStats()
+				if oldSent > pmSent || oldReceived > pmReceived {
+					log.Println("Closing:", oldIDM.ID.Cookie(), tcp.State(oldIDM.IDiagState),
+						oldSent, oldReceived, float32(old.Timestamp.UnixNano()/int64(time.Millisecond)/1000.0))
+					lostSent += oldSent - pmSent             // Check for negative?
+					lostReceived += oldReceived - pmReceived // Check for negative
 				}
 			}
 			svr.stats.IncDiffCount()
