@@ -333,6 +333,7 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 	var reportedSent, reportedReceived uint64
 	var sentClosed, receivedClosed uint64 // Totals of ALL closed connections.
 	lastReportTime := time.Time{}.Unix()
+	var logUntil uint64 // Cookie to end logging
 
 	for {
 		msgs, ok := <-readerChannel
@@ -359,11 +360,14 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 		// Remove all missing connections from the cache.
 		// Also keep a metric of the total cumulative send and receive bytes.
 		for cookie := range residual {
+			if logUntil == 0 {
+				logUntil = cookie + 100000 // Log the closes for the next 100K cookies.
+			}
 			ar := residual[cookie]
 			s, r := ar.GetStats()
 			rs += s
 			rr += r
-			if svr.cache.CycleCount() < 1<<20 {
+			if cookie < logUntil {
 				// TODO - remove when we are confident bugs are fixed.
 				IDM, err := ar.RawIDM.Parse()
 				if err != nil {
