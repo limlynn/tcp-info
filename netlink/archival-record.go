@@ -339,24 +339,31 @@ func LoadAllArchivalRecords(rdr io.Reader) ([]*ArchivalRecord, error) {
 var sendLogger = logx.NewLogEvery(nil, time.Second)
 var rcvLogger = logx.NewLogEvery(nil, time.Second)
 
-// GetStats returns basic stats from the TCPInfo snapshot.
-func (pm *ArchivalRecord) GetStats() (uint64, uint64) {
+// HasDiagInfo returns true if there is a DIAG_INFO message.
+func (pm *ArchivalRecord) HasDiagInfo() bool {
+	return len(pm.Attributes) > inetdiag.INET_DIAG_INFO
+}
+
+// GetStats returns bytes sent and received from the TCPInfo snapshot.
+// This is expected to be very high performance, and should not show up in pprof.
+// Returns true if ok, false if INET_DIAG_INFO doesn't exist or is too short.
+func (pm *ArchivalRecord) GetStats() (sent uint64, received uint64, ok bool) {
 	if len(pm.Attributes) <= inetdiag.INET_DIAG_INFO {
-		return 0, 0
+		return
 	}
 	raw := pm.Attributes[inetdiag.INET_DIAG_INFO]
 	// Ensure the array contains both uint64 fields.
 	if len(raw) < int(bytesSentOffset+8) || len(raw) < int(bytesReceivedOffset+8) {
-		return 0, 0
+		return
 	}
 	// The linux fields are actually uint64, though the LinuxTCPInfo struct uses int64 for bigquery compatibility.
-	s := *(*uint64)(unsafe.Pointer(&raw[bytesSentOffset]))
-	r := *(*uint64)(unsafe.Pointer(&raw[bytesReceivedOffset]))
+	sent = *(*uint64)(unsafe.Pointer(&raw[bytesSentOffset]))
+	received = *(*uint64)(unsafe.Pointer(&raw[bytesReceivedOffset]))
 	// Detect negative value bug?
-	if s > 1<<48 || r > 1<<48 {
-		log.Println("Suspicious byte count values:", s, r)
+	if sent > 1<<48 || received > 1<<48 {
+		log.Println("Suspicious byte count values:", sent, received)
 	}
-	return s, r
+	return sent, received, true
 }
 
 // SetBytesReceived sets the field for hacking unit tests.

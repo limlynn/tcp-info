@@ -241,7 +241,7 @@ func (svr *Saver) queue(msg *netlink.ArchivalRecord) error {
 		// Create a new connection for first time cookies.  For late connections already
 		// terminating, log some info for debugging purposes.
 		if idm.IDiagState >= uint8(tcp.FIN_WAIT1) {
-			s, r := msg.GetStats()
+			s, r, _ := msg.GetStats()
 			log.Println("Starting:", cookie, tcp.State(idm.IDiagState), s, r, float32(msg.Timestamp.UnixNano()/int64(time.Millisecond))/1000.0)
 		}
 		conn = newConnection(idm, msg.Timestamp)
@@ -292,7 +292,7 @@ func (svr *Saver) handleType(t time.Time, msgs []*netlink.NetlinkMessage) (liveS
 		ar.Timestamp = t
 
 		// Note: If GetStats shows up in profiling, might want to move to once/second code.
-		s, r := ar.GetStats()
+		s, r, _ := ar.GetStats()
 		liveSent += s
 		liveReceived += r
 		ls, lr := svr.swapAndQueue(ar)
@@ -364,7 +364,10 @@ func (svr *Saver) MessageSaverLoop(readerChannel <-chan netlink.MessageBlock) {
 				logUntil = cookie + 100000 // Log the closes for the next 100K cookies.
 			}
 			ar := residual[cookie]
-			s, r := ar.GetStats()
+			if !ar.HasDiagInfo() {
+				continue
+			}
+			s, r, _ := ar.GetStats()
 			rs += s
 			rr += r
 			if cookie < logUntil {
@@ -462,6 +465,14 @@ func (svr *Saver) swapAndQueue(pm *netlink.ArchivalRecord) (lostSent uint64, los
 			log.Println(err)
 			return
 		}
+		if !pm.HasDiagInfo() {
+			// Don't really care about records without DiagInfo.
+			// This makes it much easier to handle closing connections, as we keep
+			// the valid data in the cache.
+			sOld, rOld, _ := old.GetStats()
+			log.Println("Closing:", oldIDM.ID.Cookie(), tcp.State(oldIDM.IDiagState), sOld, rOld, float32(old.Timestamp.UnixNano()/int64(time.Millisecond)/1000.0))
+			return
+		}
 		pmIDM, err := pm.RawIDM.Parse()
 		if err != nil {
 			// TODO metric
@@ -479,8 +490,11 @@ func (svr *Saver) swapAndQueue(pm *netlink.ArchivalRecord) (lostSent uint64, los
 		}
 		if change > netlink.NoMajorChange {
 			if change == netlink.IDiagStateChange {
-				oldSent, oldReceived := old.GetStats()
-				pmSent, pmReceived := pm.GetStats()
+				oldSent, oldReceived, _ := old.GetStats()
+				pmSent, pmReceived, ok := pm.GetStats()
+				if !ok {
+					log.Println("No InetDiagInfo, oldIDM.ID.Cookie()")
+				}
 				if oldSent > pmSent || oldReceived > pmReceived {
 					log.Println("Closing:", oldIDM.ID.Cookie(), tcp.State(oldIDM.IDiagState),
 						oldSent, oldReceived, float32(old.Timestamp.UnixNano()/int64(time.Millisecond)/1000.0))

@@ -419,9 +419,13 @@ func TestGetStats(t *testing.T) {
 	}
 	var s, r uint64
 	for i := range msgs {
-		ss, rr := msgs[i].GetStats()
-		if ss < s || rr < r {
-			t.Error(s, ss, r, rr)
+		msg := msgs[i]
+		if msg.RawIDM == nil {
+			continue // Skip the metadata record, which has no tcpinfo data.
+		}
+		ss, rr, ok := msg.GetStats()
+		if !ok || ss < s || rr < r {
+			t.Error(ok, s, ss, r, rr)
 		}
 		s, r = ss, rr
 	}
