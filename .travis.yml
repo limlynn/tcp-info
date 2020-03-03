@@ -1,8 +1,8 @@
 # Travis configuration for tcp-info fast sidestream tool.
 language: go
-# We must specify go 1.12 when using logx.
+# logx requires at least 1.12
 go:
- - 1.12
+ - 1.13
 
 dist: xenial
 services:
